@@ -77,7 +77,9 @@ software to be in the path:
 +--------------------+-------------------+------------------------------------------------+
 |*Program*           |*Version*          |*Purpose*                                       |
 +--------------------+-------------------+------------------------------------------------+
-|                    |                   |                                                |
+|SortMeRNA           |2.1b               | Filter rRNA sequences                          |
++--------------------+-------------------+------------------------------------------------+
+|seqtk               |1.0.r82-dirty      |Tools for reformating sequencing data           |
 +--------------------+-------------------+------------------------------------------------+
 
 Pipeline output
@@ -100,6 +102,8 @@ Code
 from ruffus import *
 import os
 import sys
+
+import PipelineMetaFilter
 
 ###################################################
 ###################################################
@@ -129,24 +133,44 @@ SEQUENCEFILES = ("*.fasta", "*.fasta.gz", "*.fasta.1.gz", "*.fasta.1",
 SEQUENCEFILES_REGEX = regex(
     r"(\S+).(fasta$|fasta.gz|fasta.1.gz|fasta.1|fna$|fna.gz|fna.1.gz|fna.1|fa$|fa.gz|fa.1.gz|fa.1|fastq$|fastq.gz|fastq.1.gz|fastq.1)")
 
+#only run if filtering is turned on in the pipeline.ini
+def checkEnabled():
+    if PARAMS["General_rrna_filter"] != "true" and PARAMS["General_host_filter"] != "true":
+        print("Neither rRNA or host filtering selected in pipeline.ini, at least one must be enabled.")
+        sys.exit()
 
-###################################################
-# Check the input file, count number of reads
-###################################################
-@follows(mkdir("filesummaries.dir"))
+####################################################
+# SortMeRNA steps
+####################################################
+#first make an index for the rRNA reference files
+@active_if(PARAMS["General_rrna_filter"] == "true" and PARAMS["SortMeRNA_rna_index"] == "false")
+@follows(checkEnabled)
+@follows(mkdir("ref_index.dir"))
+@transform(PARAMS["SortMeRNA_rna_refs"].split(","),
+          regex(r"^(.+)/([^/]+)$"),
+           r"ref_index.dir/\2-db.stats"
+)
+def makeSortMeRNAIndices(infile,outfile):
+    #command to generate index files
+    statement = "indexdb_rna --ref {},{}".format(infile,outfile.strip(".stats"))
+    P.run()
+
+#run SortMeRNA 
+@active_if(PARAMS["General_rrna_filter"] == "true")
+@follows(makeSortMeRNAIndices)
+@follows(mkdir("sortmerna_out.dir"))
 @transform(SEQUENCEFILES,
            SEQUENCEFILES_REGEX,
-           r"filesummaries.dir/\1.seqsummary")
-def checkFile(infile, outfile):
-    seqdat=PipelineMetaAssemblyKit.SequencingData(infile)
-    outf=open(outfile,'w')
-    outf.write("name\t{}\nformat\t{}\ncompressed\t{}\npaired\t{}\ninterleaved\t{}\n".format(
-        seqdat.filename,seqdat.fileformat,seqdat.compressed,seqdat.paired,seqdat.interleaved))
-    seqdat.readCount()
-    outf.write("read_count\t{}\n".format(seqdat.readcount))
-    outf.close()
+           r"sortmerna_out.dir/\1/other_\1.*"
+)
+def runSortMeRNA(infile,outfile):
+    seqdat = PipelineMetaAssemblyKit.SequencingData(infile)
+    sortmerna = PipelineMetaFilter.SortMeRNA(seqdat,outfile,PARAMS)
+    statement = sortmerna.build()
+    print(statement)
+    P.run()
 
-@follows(checkFile)
+@follows(runSortMeRNA)
 def full():
     pass
     
@@ -157,3 +181,5 @@ if __name__ == "__main__":
                                 user_colour_scheme = {"colour_scheme_index": 1})
     else:
         sys.exit(P.main(sys.argv))
+
+        
