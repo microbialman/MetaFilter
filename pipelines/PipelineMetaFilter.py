@@ -75,23 +75,26 @@ class SortMeRNA:
             sortlist.append("-v")
         self.statementlist.append(" ".join(sortlist))
 
-    #if input was interleaved remove interleaved temp file (if necessary) and deinterleave output
+    #if input was interleaved remove interleaved temp file (if necessary)
     def deInterleave(self):
         if self.seqdat.paired == False:
             pass
-        else:
+        elif self.seqdat.paired == True:
             if self.seqdat.interleaved == False:
                 #remove temp interleave file if one was made
                 self.statementlist.append("rm -r {}".format(self.outdir+"/interleaved/"))
-            else:
-                pass
-            #split the interleaved file to seperate paired ends
-            otherloc = self.outdir+"/other_"+os.path.basename(self.filelocation)
-            binloc = os.path.dirname(os.popen('which sortmerna').read())
-            self.statementlist.append("bash {}/scripts/unmerge-paired-reads.sh {} {} {}".format(binloc,
-                                                                                                otherloc,
-                                                                                                otherloc+".1",otherloc+".2"))
-            
+                #undo interleaving
+                otherf = self.outdir+"/other_"+self.seqdat.cleanname+"."+self.seqdat.fileformat
+                pair1 = self.outdir+"/other_"+self.seqdat.filename
+                pair2 = self.outdir+"/other_"+self.seqdat.pairedname
+                self.statementlist.append("seqtk seq -l0 -1 {} > {}".format(otherf,pair1))
+                self.statementlist.append("seqtk seq -l0 -2 {} > {}".format(otherf,pair2))
+                self.statementlist.append("rm {}".format(otherf))
+                if self.seqdat.compressed == True:
+                    self.statementlist.append("gzip {}".format(pair1))
+                    self.statementlist.append("gzip {}".format(pair2))
+                    
+                
     #abstract out making reference command as it is long 
     def refList(self):
         reffastas = self.params["SortMeRNA_rna_refs"].split(",")

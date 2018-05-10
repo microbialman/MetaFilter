@@ -161,15 +161,18 @@ def makeSortMeRNAIndices(infile,outfile):
 @follows(mkdir("sortmerna_out.dir"))
 @transform(SEQUENCEFILES,
            SEQUENCEFILES_REGEX,
-           r"sortmerna_out.dir/\1/other_\1.*"
+           r"sortmerna_out.dir/\1/other_\1.\2"
 )
 def runSortMeRNA(infile,outfile):
     seqdat = PipelineMetaAssemblyKit.SequencingData(infile)
     sortmerna = PipelineMetaFilter.SortMeRNA(seqdat,outfile,PARAMS)
     statement = sortmerna.build()
-    print(statement)
     P.run()
+    
+    
 
+    
+    
 @follows(runSortMeRNA)
 def full():
     pass
