@@ -186,12 +186,12 @@ def runSortMeRNA(infile,outfile):
 # Genome Alignment step
 ###################################################
 #align reads to chosen reference genome using bowtie2
-#convert the output from bam to sam
+#convert the output from sam to bam
 @active_if(PARAMS["General_host_filter"] == "true")
 @follows(runSortMeRNA)
 @follows(mkdir("genome_filter_out.dir"))
-@transform(runSortMeRNA,regex(r'rrna_filter_out.dir/(\S+)/other_(\S[^.]+).\S+$'),
-           r"genome_filter_out.dir/\2/mapped.bam")
+@transform(runSortMeRNA,regex(r'rrna_filter_out.dir/(\S+)/other_(\S[^.]+.\S+)$'),
+           r"genome_filter_out.dir/\1/\2.mapped.bam")
 def mapBowtie2(infile,outfile):
     job_threads = PARAMS["Bowtie_threads"]
     job_memory = str(PARAMS["Bowtie_memory"])+"G"
@@ -208,12 +208,24 @@ def mapBowtie2(infile,outfile):
     statementlist.append("rm {}".format(outfile.replace(".bam",".sam")))
     statement = " && ".join(statementlist)
     P.run()
-    
-    
+
+#filter the reads from the mapping output and convert to fasta/q file(s)
+@active_if(PARAMS["General_host_filter"] == "true")
+@follows(mapBowtie2)
+@transform(mapBowtie2,regex(r"genome_filter_out.dir/(\S+)/(\S+).mapped.bam"),
+           r"genome_filter_out.dir/\1/hostfiltered_\2")
+def filterMapping(infile,outfile):
+    #use the original sequencing file to pull pairedness, file format and compression
+    seqdat = PipelineMetaAssemblyKit.SequencingData(os.path.basename(infile.strip(".mapped.bam")))
+    filterer = PipelineMetaFilter.FilterFromBam(infile,outfile,seqdat,PARAMS)
+    statementlist = []
+    statementlist.append(filterer.build())
+    statement = " && ".join(statementlist)
+    print(statement)
 
     
     
-@follows(mapBowtie2)
+@follows(filterMapping)
 def full():
     pass
     

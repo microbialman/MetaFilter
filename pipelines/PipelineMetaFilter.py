@@ -35,7 +35,7 @@ class SortMeRNA:
             self.filelocation = self.outdir+"/interleaved/{}".format(self.seqdat.cleanname+"."+self.seqdat.fileformat)
             self.statementlist.append("seqtk mergepe {} {} >{}".format(self.indir+self.seqdat.filepath,self.indir+self.seqdat.pairedname,self.filelocation))
 
-    #make the main call to sortmerna and clean interleaved if necessary
+    #make the main call to sortmerna
     def buildStatement(self):
         sortlist = ["sortmerna"]
         sortlist.append(self.refList())
@@ -94,6 +94,7 @@ class SortMeRNA:
                 self.statementlist.append("seqtk seq -l0 -1 {} > {}".format(otherf,pair1.strip(".gz")))
                 self.statementlist.append("seqtk seq -l0 -2 {} > {}".format(otherf,pair2.strip(".gz")))
                 self.statementlist.append("rm {}".format(otherf))
+                #compress the outputs if inputs were
                 if self.seqdat.compressed == True:
                     self.statementlist.append("gzip {}".format(pair1.strip(".gz")))
                     self.statementlist.append("gzip {}".format(pair2.strip(".gz")))
@@ -128,6 +129,7 @@ class Bowtie2:
         self.outdir = os.path.dirname(outfile)
         self.params = params
 
+    #main call to bowtie implements most arguments    
     def build(self):
         statementlist = ["bowtie2"]
         statementlist.append("-x {}".format(self.params["Bowtie_genome_db"]))
@@ -137,7 +139,7 @@ class Bowtie2:
             statementlist.append("--interleaved {}".format(self.seqdat.filepath))
         else:
             statementlist.append("-1 {} -2 {}".format(self.seqdat.filepath,self.indir+self.seqdat.pairedname))
-        statementlist.append("-S {}".format(self.outdir+"/mapped.sam"))
+        statementlist.append("-S {}".format(self.outfile.replace("bam","sam")))
         if self.seqdat.fileformat == "fasta":
             statementlist.append("-f")
         else:
@@ -188,3 +190,27 @@ class Bowtie2:
         statementlist.append("-p {}".format(self.params["Bowtie_threads"]))
         
         return(" ".join(statementlist))
+
+
+class FilterFromBam:
+
+    def __init__(self,infile,outfile,seqdat,params):
+        self.params = params
+        self.seqdat = seqdat
+        self.infile = infile
+        self.outfile = outfile
+        self.filtered = infile.strip(".mapped.bam")+".unmapped_reads.bam"
+        self.statementlist = []
+        self.unmapped()
+
+    def unmapped(self):
+        if self.seqdat.paired == True:
+            fflag,Fflag = self.params["Filtering_paired_pos"],self.params["Filtering_paired_neg"]
+        else:
+            fflag,Fflag = self.params["Filtering_un_pos"],self.params["Filtering_un_neg"]
+        unmap = "samtools view -b -f {} -F {} {} >{}".format(fflag,Fflag,self.infile,self.filtered)
+        self.statementlist.append(unmap)
+
+    def build(self):
+        return(" && ".join(self.statementlist))
+    
