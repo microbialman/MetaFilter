@@ -5,6 +5,10 @@ classes and utility functions for pipeline_MetaFilter.py
 
 import os
 
+'''
+class to build call to SortMeRNA
+'''
+
 class SortMeRNA:    
     def __init__(self,seqdat,outfile,params):
         
@@ -70,7 +74,7 @@ class SortMeRNA:
             sortlist.append("-R")
         sortlist.append("-a {}".format(self.params["SortMeRNA_threads"]))
         sortlist.append("-e {}".format(self.params["SortMeRNA_e"]))
-        sortlist.append("-m {}".format(self.params["SortMeRNA_memory"]))
+        sortlist.append("-m {}".format(str(int(self.params["SortMeRNA_memory"])*int(self.params["SortMeRNA_threads"]))))
         if self.params["SortMeRNA_v"] == "true":
             sortlist.append("-v")
         self.statementlist.append(" ".join(sortlist))
@@ -87,12 +91,12 @@ class SortMeRNA:
                 otherf = self.outdir+"/other_"+self.seqdat.cleanname+"."+self.seqdat.fileformat
                 pair1 = self.outdir+"/other_"+self.seqdat.filename
                 pair2 = self.outdir+"/other_"+self.seqdat.pairedname
-                self.statementlist.append("seqtk seq -l0 -1 {} > {}".format(otherf,pair1))
-                self.statementlist.append("seqtk seq -l0 -2 {} > {}".format(otherf,pair2))
+                self.statementlist.append("seqtk seq -l0 -1 {} > {}".format(otherf,pair1.strip(".gz")))
+                self.statementlist.append("seqtk seq -l0 -2 {} > {}".format(otherf,pair2.strip(".gz")))
                 self.statementlist.append("rm {}".format(otherf))
                 if self.seqdat.compressed == True:
-                    self.statementlist.append("gzip {}".format(pair1))
-                    self.statementlist.append("gzip {}".format(pair2))
+                    self.statementlist.append("gzip {}".format(pair1.strip(".gz")))
+                    self.statementlist.append("gzip {}".format(pair2.strip(".gz")))
                     
                 
     #abstract out making reference command as it is long 
@@ -111,3 +115,76 @@ class SortMeRNA:
     def build(self):
         return(" && ".join(self.statementlist))
             
+
+'''
+Class to call bowtie2 mapping command
+'''
+class Bowtie2:
+    def __init__(self,seqdat,outfile,params):
+        
+        self.seqdat = seqdat
+        self.outfile = outfile
+        self.indir = os.path.dirname(self.seqdat.filepath)+"/"
+        self.outdir = os.path.dirname(outfile)
+        self.params = params
+
+    def build(self):
+        statementlist = ["bowtie2"]
+        statementlist.append("-x {}".format(self.params["Bowtie_genome_db"]))
+        if self.seqdat.paired == False:
+            statementlist.append("-U {}".format(self.seqdat.filepath))
+        elif self.seqdat.interleaved == True:
+            statementlist.append("--interleaved {}".format(self.seqdat.filepath))
+        else:
+            statementlist.append("-1 {} -2 {}".format(self.seqdat.filepath,self.indir+self.seqdat.pairedname))
+        statementlist.append("-S {}".format(self.outdir+"/mapped.sam"))
+        if self.seqdat.fileformat == "fasta":
+            statementlist.append("-f")
+        else:
+            statementlist.append("-q")
+        if self.params["Bowtie_phred_type"] == "64":
+            statementlist.append("--phred64")
+        statementlist.append("--{}".format(self.params["Bowtie_mode"]))
+        if self.params["Bowtie_preset"] != "false":
+            statementlist.append("--{}".format(self.params["Bowtie_preset"]))
+        statementlist.append("-N {}".format(self.params["Bowtie_n"]))
+        statementlist.append("-L {}".format(self.params["Bowtie_l"]))
+        statementlist.append("-i {}".format(self.params["Bowtie_i"]))
+        statementlist.append("--n-ceil {}".format(self.params["Bowtie_n_ceil"]))
+        statementlist.append("--dpad {}".format(self.params["Bowtie_dpad"]))
+        statementlist.append("--gbar {}".format(self.params["Bowtie_gbar"]))
+        if self.params["Bowtie_ignore_quals"] == "true":
+            statementlist.append("--ignore-quals")
+        if self.params["Bowtie_ignore_quals"] == "true":
+            statementlist.append["--ignore-quals"]
+        if self.params["Bowtie_nofw"] == "true":
+            statementlist.append["--nofw"]
+        if self.params["Bowtie_norc"] == "true":
+            statementlist.append["--norc"]
+        if self.params["Bowtie_no_1mm_upfront"] == "true":
+            statementlist.append["--no-1mm-upfront"]
+        statementlist.append("--ma {}".format(self.params["Bowtie_ma"]))
+        statementlist.append("--mp {}".format(self.params["Bowtie_mp"]))
+        statementlist.append("--np {}".format(self.params["Bowtie_np"]))
+        statementlist.append("--rdg {}".format(self.params["Bowtie_rdg"]))
+        statementlist.append("--rfg {}".format(self.params["Bowtie_rfg"]))
+        statementlist.append("--score-min {}".format(self.params["Bowtie_score_min"]))
+        if self.params["Bowtie_reporting"] != "default":
+            statementlist.append("--{}".format(self.params["Bowtie_reporting"]))
+        statementlist.append("-D {}".format(self.params["Bowtie_d"]))
+        statementlist.append("-R {}".format(self.params["Bowtie_r"]))
+        statementlist.append("--minins {}".format(self.params["Bowtie_minins"]))
+        statementlist.append("--maxins {}".format(self.params["Bowtie_maxins"]))
+        if self.params["Bowtie_no_mixed"] == "true":
+            statementlist.append["--no-mixed"]
+        if self.params["Bowtie_no_discordant"] == "true":
+            statementlist.append["--no-discordant"]
+        if self.params["Bowtie_no_dovetail"] == "true":
+            statementlist.append["--no-dovetail"]
+        if self.params["Bowtie_no_contain"] == "true":
+            statementlist.append["--no-contain"]
+        if self.params["Bowtie_no_overlap"] == "true":
+            statementlist.append["--no-overlap"]
+        statementlist.append("-p {}".format(self.params["Bowtie_threads"]))
+        
+        return(" ".join(statementlist))

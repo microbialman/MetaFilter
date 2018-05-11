@@ -81,6 +81,12 @@ software to be in the path:
 +--------------------+-------------------+------------------------------------------------+
 |seqtk               |1.0.r82-dirty      |Tools for reformating sequencing data           |
 +--------------------+-------------------+------------------------------------------------+
+|bowtie2             |2.3.0              |Mapper to align to host reference genome        |
++--------------------+-------------------+------------------------------------------------+
+|samtools            |1.3.1              |Convert and handle bam and sam files            |
++--------------------+-------------------+------------------------------------------------+
+|bedtools            |2.25.0             |Convert bed to fastx                            |
++--------------------+-------------------+------------------------------------------------+
 
 Pipeline output
 ===============
@@ -120,7 +126,6 @@ PARAMS = P.PARAMS
 
 #add PipelineMetaAssemblyKit from ini file
 sys.path.insert(0, PARAMS["General_metaassembly_path"])
-print(sys.path)
 import PipelineMetaAssemblyKit
 
 
@@ -155,25 +160,60 @@ def makeSortMeRNAIndices(infile,outfile):
     statement = "indexdb_rna --ref {},{}".format(infile,outfile.strip(".stats"))
     P.run()
 
-#run SortMeRNA 
-@active_if(PARAMS["General_rrna_filter"] == "true")
+#run SortMeRNA
 @follows(makeSortMeRNAIndices)
-@follows(mkdir("sortmerna_out.dir"))
-@transform(SEQUENCEFILES,
-           SEQUENCEFILES_REGEX,
-           r"sortmerna_out.dir/\1/other_\1.\2"
-)
+@follows(mkdir("rrna_filter_out.dir"))
+@transform(SEQUENCEFILES,SEQUENCEFILES_REGEX,
+          r"rrna_filter_out.dir/\1/other_\1.\2")
 def runSortMeRNA(infile,outfile):
     seqdat = PipelineMetaAssemblyKit.SequencingData(infile)
-    sortmerna = PipelineMetaFilter.SortMeRNA(seqdat,outfile,PARAMS)
-    statement = sortmerna.build()
+    if PARAMS["General_rrna_filter"] == "true":
+        sortmerna = PipelineMetaFilter.SortMeRNA(seqdat,outfile,PARAMS)
+        job_memory = str(PARAMS["SortMeRNA_memory"])+"G"
+        job_threads = PARAMS["SortMeRNA_threads"]
+        statement = sortmerna.build()
+    else:
+        #if skipping rRNA filtering symlink files and make appropriate directory
+        statementlist= ["rm -r ref_index.dir"]
+        statementlist.append('mkdir -p rrna_filter_out.dir/{}'.format(seqdat.cleanname))
+        statementlist.append('ln -s {} {}'.format(os.getcwd()+"/"+infile,outfile))
+        if seqdat.paired == True and seqdat.interleaved == False:
+            statementlist.append('ln -s {} rrna_filter_out.dir/{}/other_{}'.format(os.getcwd()+"/"+seqdat.pairedname,seqdat.cleanname,seqdat.pairedname))
+        statement = " && ".join(statementlist)
+    P.run()
+
+###################################################
+# Genome Alignment step
+###################################################
+#align reads to chosen reference genome using bowtie2
+#convert the output from bam to sam
+@active_if(PARAMS["General_host_filter"] == "true")
+@follows(runSortMeRNA)
+@follows(mkdir("genome_filter_out.dir"))
+@transform(runSortMeRNA,regex(r'rrna_filter_out.dir/(\S+)/other_(\S[^.]+).\S+$'),
+           r"genome_filter_out.dir/\2/mapped.bam")
+def mapBowtie2(infile,outfile):
+    job_threads = PARAMS["Bowtie_threads"]
+    job_memory = str(PARAMS["Bowtie_memory"])+"G"
+    seqdat = PipelineMetaAssemblyKit.SequencingData(infile)
+    bowtie = PipelineMetaFilter.Bowtie2(seqdat,outfile,PARAMS)
+    statementlist = []
+    #directory for output
+    statementlist.append("mkdir -p {}".format(os.path.dirname(outfile)))
+    #call to bowtie
+    statementlist.append(bowtie.build())
+    #convert sam to bam
+    statementlist.append("samtools view -bS {} > {}".format(outfile.replace(".bam",".sam"),outfile))
+    #remove the sam file
+    statementlist.append("rm {}".format(outfile.replace(".bam",".sam")))
+    statement = " && ".join(statementlist)
     P.run()
     
     
 
     
     
-@follows(runSortMeRNA)
+@follows(mapBowtie2)
 def full():
     pass
     
