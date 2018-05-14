@@ -124,8 +124,7 @@ P.getParameters(
        "pipeline.ini" ] )
 PARAMS = P.PARAMS
 
-#add PipelineMetaAssemblyKit from ini file
-sys.path.insert(0, PARAMS["General_metaassembly_path"])
+#add PipelineMetaAssemblyKit
 import PipelineMetaAssemblyKit
 
 
@@ -198,6 +197,8 @@ def mapBowtie2(infile,outfile):
     seqdat = PipelineMetaAssemblyKit.SequencingData(infile)
     bowtie = PipelineMetaFilter.Bowtie2(seqdat,outfile,PARAMS)
     statementlist = []
+    #remove all comments from read names in files (trimming can add comments making non-matching readnames in pairs)
+    statementlist.append(bowtie.cleanNames())
     #directory for output
     statementlist.append("mkdir -p {}".format(os.path.dirname(outfile)))
     #call to bowtie
@@ -221,14 +222,33 @@ def filterMapping(infile,outfile):
     statementlist = []
     statementlist.append(filterer.build())
     statement = " && ".join(statementlist)
-    print(statement)
+    P.run()
 
-    
-    
+#symlink the appropriate outputfiles to a final clean directory
 @follows(filterMapping)
+@follows(mkdir("filtered_reads.dir"))
+@transform(SEQUENCEFILES,SEQUENCEFILES_REGEX,r"filtered_reads.dir/filtered-\1.\2")
+def cleanUp(infile,outfile):
+    seqdat = PipelineMetaAssemblyKit.SequencingData(infile)
+    statement = PipelineMetaFilter.CleanUp(seqdat,outfile,PARAMS)
+    P.run()
+    
+    
+@follows(cleanUp)
 def full():
     pass
     
+
+@follows(mkdir("report.dir"))
+@merge(SEQUENCEFILES,"report.dir/report.pdf")
+def build_report(infiles,outfile):
+    filtercounts = open("report.dir/filtercounts.txt",'w')
+    filtercounts.write("File\tInput\tPost_rRNA_Filtering\tPost_Genome_Filtering\n")
+    for i in infiles:
+        filtercounts.write(PipelineMetaFilter.CountReads(i,PARAMS))
+    filtercounts.close()
+    
+
 if __name__ == "__main__":
     if sys.argv[1] == "plot":
         pipeline_printout_graph("test.pdf", "pdf", [full], no_key_legend=True,
@@ -236,5 +256,7 @@ if __name__ == "__main__":
                                 user_colour_scheme = {"colour_scheme_index": 1})
     else:
         sys.exit(P.main(sys.argv))
+
+
 
         

@@ -4,6 +4,7 @@ classes and utility functions for pipeline_MetaFilter.py
 '''
 
 import os
+import PipelineMetaAssemblyKit
 
 '''
 class to build call to SortMeRNA
@@ -129,6 +130,21 @@ class Bowtie2:
         self.outdir = os.path.dirname(outfile)
         self.params = params
 
+    #function to strip comments from fastq and fasta names that interfere with bowtie paired mode
+    def cleanNames(self):
+        statementlist = []
+        wd = self.indir
+        statementlist.append("zcat -f {} | awk '{{print $1}}' > temp1".format(wd+self.seqdat.filename))
+        statementlist.append("rm {} && mv temp1 {}".format(wd+self.seqdat.filename,wd+self.seqdat.filename.rstrip(".gz")))
+        if self.seqdat.paired == True and self.seqdat.interleaved == False:
+            statementlist.append("zcat -f {} | awk '{{print $1}}' > temp2".format(wd+self.seqdat.pairedname))
+            statementlist.append("rm {} && mv temp2 {}".format(wd+self.seqdat.pairedname,wd+self.seqdat.pairedname.rstrip(".gz")))
+        if self.seqdat.compressed == True:
+            statementlist.append("gzip {}".format(wd+self.seqdat.filename.strip(".gz")))
+            if self.seqdat.paired == True and self.seqdat.interleaved == False:
+                statementlist.append("gzip {}".format(wd+self.seqdat.pairedname.strip(".gz")))
+        return(" && ".join(statementlist))
+
     #main call to bowtie implements most arguments    
     def build(self):
         statementlist = ["bowtie2"]
@@ -200,8 +216,11 @@ class FilterFromBam:
         self.infile = infile
         self.outfile = outfile
         self.filtered = infile.strip(".mapped.bam")+".unmapped_reads.bam"
+        self.pairsort = infile.strip(".mapped.bam")+".sorted_unmapped_reads.bam"
+        self.outdir = os.path.dirname(outfile)
         self.statementlist = []
         self.unmapped()
+        self.convertBam()
 
     def unmapped(self):
         if self.seqdat.paired == True:
@@ -211,6 +230,74 @@ class FilterFromBam:
         unmap = "samtools view -b -f {} -F {} {} >{}".format(fflag,Fflag,self.infile,self.filtered)
         self.statementlist.append(unmap)
 
+    def convertBam(self):
+        #if paired reads ensure they are sorted into pairs before conversion to FASTX
+        if self.seqdat.paired == True:
+            self.statementlist.append("samtools sort -n {} -o {}".format(
+                self.filtered,self.pairsort))
+            self.statementlist.append("rm {}".format(self.filtered))
+            if self.seqdat.interleaved == False:
+                self.statementlist.append("bedtools bamtofastq -i {} -fq {} -fq2 {}".format(
+                self.pairsort, self.outfile.rstrip(".gz"), self.outdir+"/hostfiltered_"+self.seqdat.pairedname.rstrip(".gz")))
+            else:
+               self.statementlist.append("bedtools bamtofastq -i {} -fq {}".format(
+                self.pairsort, self.outfile.rstrip(".gz"))) 
+        else:
+            self.statementlist.append("bedtools bamtofastq -i {} -fq {}".format(
+                self.filtered, self.outfile.rstrip(".gz")))
+        #compress if input was
+        if self.seqdat.compressed == True:
+                self.statementlist.append("gzip {}".format(self.outfile.rstrip(".gz")))
+                if self.seqdat.paired == True and self.seqdat.interleaved == False:
+                    self.statementlist.append("gzip {}".format(
+                        self.outdir+"/hostfiltered_"+self.seqdat.pairedname.rstrip(".gz")))
+        
+
     def build(self):
         return(" && ".join(self.statementlist))
     
+
+#function to clean up the directory structures at the end
+def CleanUp(seqdat,outfile,params):
+    statementlist = []
+    rnadir = os.getcwd()+"/rrna_filter_out.dir/"
+    gendir = os.getcwd()+"/genome_filter_out.dir/"
+    outdir = os.path.dirname(outfile)
+    #if only rRNA filtering symlink those files
+    if params["General_rrna_filter"] == "true" and params["General_host_filter"] == "false":
+        statementlist.append("ln -s {} {}".format(rnadir+seqdat.cleanname+"/other_"+seqdat.filename,outfile))
+        if seqdat.paired == True and seqdat.interleaved == False:
+            statementlist.append("ln -s {} {}".format(rnadir+seqdat.cleanname+"/other_"+seqdat.pairedname,outdir+"/filtered-"+seqdat.pairedname))
+    #else symlink genome filtered files
+    else:
+        statementlist.append("ln -s {} {}".format(gendir+seqdat.cleanname+"/hostfiltered_"+seqdat.filename,outfile))
+        if seqdat.paired == True and seqdat.interleaved == False:
+            statementlist.append("ln -s {} {}".format(gendir+seqdat.cleanname+"/hostfiltered_"+seqdat.pairedname,outdir+"/filtered-"+seqdat.pairedname))
+    return(" && ".join(statementlist))
+
+
+#function to summarise reads filtered at each step
+def CountReads(infile,params):
+    original = PipelineMetaAssemblyKit.SequencingData(infile)
+    original.readCount()
+    rrna = False
+    genome = False
+    rnadir = os.getcwd()+"/rrna_filter_out.dir/"
+    gendir = os.getcwd()+"/genome_filter_out.dir/"
+    if params["General_rrna_filter"] == "true":
+        rrna = PipelineMetaAssemblyKit.SequencingData(rnadir+original.cleanname+"/other_"+original.filename)
+        rrna.readCount()
+    if params["General_host_filter"] == "true":
+        genome = PipelineMetaAssemblyKit.SequencingData(gendir+original.cleanname+"/hostfiltered_"+original.filename)
+        genome.readCount()
+    ocount=original.readcount
+    if rrna == False:
+        rcount = "NA"
+    else:
+        rcount = rrna.readcount
+    if genome == False:
+        gcount = "NA"
+    else:
+        gcount = genome.readcount
+    return("{}\t{}\t{}\t{}\n".format(original.cleanname,ocount,rcount,gcount))
+        
