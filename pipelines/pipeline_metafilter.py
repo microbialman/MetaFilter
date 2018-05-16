@@ -241,15 +241,32 @@ def cleanUp(infile,outfile):
 def full():
     pass
     
-
-@follows(mkdir("report.dir"))
-@merge(SEQUENCEFILES,"report.dir/report.pdf")
-def build_report(infiles,outfile):
-    filtercounts = open("report.dir/filtercounts.txt",'w')
+#report building
+#summarise number of reads in each file at each stage
+@follows(mkdir("report.dir/per_file_summaries/"))
+@transform(SEQUENCEFILES,SEQUENCEFILES_REGEX,r"report.dir/per_file_summaries/\1.filtersummary.txt")
+def summariseCounts(infile,outfile):
+    filtercounts = open(outfile,'w',1)
     filtercounts.write("File\tInput\tPost_rRNA_Filtering\tPost_Genome_Filtering\n")
-    for i in infiles:
-        filtercounts.write(PipelineMetaFilter.CountReads(i,PARAMS))
+    filtercounts.write(PipelineMetaFilter.CountReads(infile,PARAMS))
     filtercounts.close()
+    
+#combine these into one file
+@follows(summariseCounts)
+@merge(summariseCounts,"report.dir/combined.filtersummary.txt")
+def mergeSummaries(infiles, outfile):
+    combinedcounts = open(outfile,"w",1)
+    combinedcounts.write("File\tInput\tPost_rRNA_Filtering\tPost_Genome_Filtering\n")
+    for i in infiles:
+        sumfile = open(i,"rU").readlines()
+        combinedcounts.write(sumfile[1])
+    combinedcounts.close()
+#generate an HTML report from the summary files
+@follows(mergeSummaries)
+def build_report():
+    scriptloc = "/".join(os.path.dirname(sys.argv[0]).split("/")[0:-1])+"/scripts/filter_report.Rmd"
+    statement = 'R -e "rmarkdown::render(\'{}\',output_file=\'{}/report.dir/filter_report.html\')" --args {}/report.dir/combined.filtersummary.txt'.format(scriptloc,os.getcwd(),os.getcwd())
+    P.run()
     
 
 if __name__ == "__main__":
