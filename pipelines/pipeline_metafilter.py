@@ -168,7 +168,10 @@ def runSortMeRNA(infile,outfile):
     seqdat = PipelineMetaAssemblyKit.SequencingData(infile)
     if PARAMS["General_rrna_filter"] == "true":
         sortmerna = PipelineMetaFilter.SortMeRNA(seqdat,outfile,PARAMS)
-        job_memory = str(PARAMS["SortMeRNA_memory"])+"G"
+        if PARAMS["SortMeRNA_memory"] != "false":
+            job_memory = str(PARAMS["SortMeRNA_memory"])+"G"
+        else:
+            job_memory = "1G"
         job_threads = PARAMS["SortMeRNA_threads"]
         statement = sortmerna.build()
     else:

@@ -75,7 +75,8 @@ class SortMeRNA:
             sortlist.append("-R")
         sortlist.append("-a {}".format(self.params["SortMeRNA_threads"]))
         sortlist.append("-e {}".format(self.params["SortMeRNA_e"]))
-        sortlist.append("-m {}".format(str(int(self.params["SortMeRNA_memory"])*int(self.params["SortMeRNA_threads"]))))
+        if self.params["SortMeRNA_memory"] != "false":
+            sortlist.append("-m {}".format(str(int(self.params["SortMeRNA_memory"])*900*int(self.params["SortMeRNA_threads"]))))
         if self.params["SortMeRNA_v"] == "true":
             sortlist.append("-v")
         self.statementlist.append(" ".join(sortlist))
@@ -134,11 +135,11 @@ class Bowtie2:
     def cleanNames(self):
         statementlist = []
         wd = self.indir
-        statementlist.append("zcat -f {} | awk '{{print $1}}' > temp1".format(wd+self.seqdat.filename))
-        statementlist.append("rm {} && mv temp1 {}".format(wd+self.seqdat.filename,wd+self.seqdat.filename.rstrip(".gz")))
+        statementlist.append("zcat -f {} | awk '{{print $1}}' > {}temp1".format(wd+self.seqdat.filename,wd))
+        statementlist.append("rm {} && mv {}temp1 {}".format(wd+self.seqdat.filename,wd,wd+self.seqdat.filename.rstrip(".gz")))
         if self.seqdat.paired == True and self.seqdat.interleaved == False:
-            statementlist.append("zcat -f {} | awk '{{print $1}}' > temp2".format(wd+self.seqdat.pairedname))
-            statementlist.append("rm {} && mv temp2 {}".format(wd+self.seqdat.pairedname,wd+self.seqdat.pairedname.rstrip(".gz")))
+            statementlist.append("zcat -f {} | awk '{{print $1}}' > {}temp2".format(wd+self.seqdat.pairedname,wd))
+            statementlist.append("rm {} && mv {}temp2 {}".format(wd+self.seqdat.pairedname,wd,wd+self.seqdat.pairedname.rstrip(".gz")))
         if self.seqdat.compressed == True:
             statementlist.append("gzip {}".format(wd+self.seqdat.filename.strip(".gz")))
             if self.seqdat.paired == True and self.seqdat.interleaved == False:
