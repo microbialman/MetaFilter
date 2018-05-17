@@ -261,6 +261,7 @@ def mergeSummaries(infiles, outfile):
         sumfile = open(i,"rU").readlines()
         combinedcounts.write(sumfile[1])
     combinedcounts.close()
+    
 #generate an HTML report from the summary files
 @follows(mergeSummaries)
 def build_report():
